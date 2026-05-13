@@ -14,8 +14,6 @@ import {
   type Connection,
   type NodeChange,
   type EdgeChange,
-  applyNodeChanges,
-  applyEdgeChanges,
   type NodeTypes,
   type EdgeTypes,
 } from "@xyflow/react";
@@ -30,10 +28,14 @@ import { FlowEdge, type FlowEdgeData } from "./FlowEdge";
 import { PumpPalette } from "./PumpPalette";
 import { CanvasToolbar } from "./CanvasToolbar";
 import { ShortcutOverlay } from "./ShortcutOverlay";
+import { SubsectionNode, computeSubsectionBounds, type SubsectionNodeData } from "./SubsectionNode";
+import { SelectionActionBar } from "./SelectionActionBar";
 import { AddThirdPartyPumpSheet } from "@/components/forms/AddThirdPartyPumpSheet";
+import { NameSubsectionDialog } from "@/components/forms/NameSubsectionDialog";
+import type { SubsectionColor } from "@/types";
 import { toast } from "sonner";
 
-const nodeTypes: NodeTypes = { pump: PumpNode };
+const nodeTypes: NodeTypes = { pump: PumpNode, subsection: SubsectionNode };
 const edgeTypes: EdgeTypes = { flow: FlowEdge };
 
 function Inner() {
@@ -49,21 +51,69 @@ function Inner() {
   const [snap, setSnap] = useState(true);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const [namingPumpIds, setNamingPumpIds] = useState<string[] | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, setNodes: rfSetNodes } = useReactFlow();
 
-  const nodes: Node[] = useMemo(
+  const colorByNodeId = useMemo(() => {
+    const map = new Map<string, SubsectionColor>();
+    (active.subsections ?? []).forEach((sub) => {
+      sub.pumpIds.forEach((pid) => map.set(pid, sub.color));
+    });
+    return map;
+  }, [active.subsections]);
+
+  const pumpNodes: Node[] = useMemo(
     () =>
       active.nodes.map((n) => ({
         id: n.id,
         type: "pump",
         position: n.position,
-        data: { pumpId: n.pumpId, active: n.active, role: n.role } satisfies PumpNodeData,
+        data: {
+          pumpId: n.pumpId,
+          active: n.active,
+          role: n.role,
+          subsectionColor: colorByNodeId.get(n.id),
+        } satisfies PumpNodeData,
         deletable: true,
       })),
-    [active.nodes]
+    [active.nodes, colorByNodeId]
   );
+
+  const subsectionNodes: Node[] = useMemo(() => {
+    const subs = active.subsections ?? [];
+    const out: Node[] = [];
+    for (const sub of subs) {
+      const positions = sub.pumpIds
+        .map((pid) => active.nodes.find((n) => n.id === pid))
+        .filter((n): n is NonNullable<typeof n> => !!n)
+        .map((n) => n.position);
+      const bounds = computeSubsectionBounds(positions);
+      if (!bounds) continue;
+      out.push({
+        id: `grp-${sub.id}`,
+        type: "subsection",
+        position: { x: bounds.x, y: bounds.y },
+        data: {
+          subsection: sub,
+          width: bounds.width,
+          height: bounds.height,
+        } satisfies SubsectionNodeData,
+        draggable: false,
+        selectable: false,
+        connectable: false,
+        focusable: false,
+        deletable: false,
+        zIndex: -1,
+        style: { width: bounds.width, height: bounds.height, pointerEvents: "none" },
+      });
+    }
+    return out;
+  }, [active.subsections, active.nodes]);
+
+  const nodes: Node[] = useMemo(() => [...subsectionNodes, ...pumpNodes], [subsectionNodes, pumpNodes]);
 
   const edges: Edge[] = useMemo(
     () =>
@@ -184,6 +234,13 @@ function Inner() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onSelectionChange={(s) =>
+              setSelectedNodeIds(s.nodes.filter((n) => n.type === "pump").map((n) => n.id))
+            }
+            multiSelectionKeyCode={["Shift", "Control", "Meta"]}
+            selectionOnDrag
+            panOnDrag={[1, 2]}
+            selectionKeyCode={null}
             snapToGrid={snap}
             snapGrid={[16, 16]}
             fitView
@@ -212,12 +269,27 @@ function Inner() {
           </ReactFlow>
 
           {active.nodes.length === 0 && <CanvasEmpty />}
+
+          <SelectionActionBar
+            selectedNodeIds={selectedNodeIds}
+            onGroup={() => setNamingPumpIds(selectedNodeIds)}
+          />
         </div>
       </div>
 
       <AnimatePresence>
         {showShortcuts && <ShortcutOverlay onClose={() => setShowShortcuts(false)} />}
         {addOpen && <AddThirdPartyPumpSheet onClose={() => setAddOpen(false)} />}
+        {namingPumpIds && (
+          <NameSubsectionDialog
+            pumpIds={namingPumpIds}
+            onClose={() => setNamingPumpIds(null)}
+            onCreated={() => {
+              rfSetNodes((ns) => ns.map((n) => ({ ...n, selected: false })));
+              setSelectedNodeIds([]);
+            }}
+          />
+        )}
       </AnimatePresence>
     </div>
   );

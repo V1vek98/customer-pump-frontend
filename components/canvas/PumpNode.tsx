@@ -8,12 +8,15 @@ import { overallHealth } from "@/lib/health";
 import { Power, Trash2 } from "lucide-react";
 import { useCanvasStore } from "@/lib/store/canvas";
 import { useFleetStore } from "@/lib/store/fleet";
+import { SUBSECTION_COLORS } from "@/lib/subsections";
+import type { SubsectionColor } from "@/types";
 import { toast } from "sonner";
 
 export type PumpNodeData = {
   pumpId: string;
   active: boolean;
   role?: "lead" | "standby";
+  subsectionColor?: SubsectionColor;
 };
 
 export function PumpNode({ id, data, selected }: NodeProps) {
@@ -34,6 +37,20 @@ export function PumpNode({ id, data, selected }: NodeProps) {
   const health = pump.isThirdParty ? null : overallHealth(pump);
   const isKsb = !pump.isThirdParty;
   const active = d.active;
+  const sub = d.subsectionColor ? SUBSECTION_COLORS[d.subsectionColor] : null;
+
+  let border: string;
+  let boxShadow: string;
+  if (selected) {
+    border = "1px solid rgba(255,194,51,0.85)";
+    boxShadow = "0 0 0 4px rgba(255,194,51,0.22), 0 18px 40px -12px rgba(40,40,60,0.22)";
+  } else if (sub) {
+    border = `1px solid ${sub.border}`;
+    boxShadow = `0 0 0 3px ${sub.ring}, 0 8px 24px -10px rgba(40,40,60,0.18)`;
+  } else {
+    border = "1px solid rgba(0,0,0,0.07)";
+    boxShadow = "0 1px 0 rgba(255,255,255,0.85) inset, 0 8px 24px -10px rgba(40,40,60,0.18)";
+  }
 
   return (
     <div className="group relative w-[228px]">
@@ -48,10 +65,8 @@ export function PumpNode({ id, data, selected }: NodeProps) {
           background: "rgba(255,255,255,0.75)",
           backdropFilter: "blur(24px) saturate(180%)",
           WebkitBackdropFilter: "blur(24px) saturate(180%)",
-          border: `1px solid ${selected ? "rgba(255,194,51,0.85)" : "rgba(0,0,0,0.07)"}`,
-          boxShadow: selected
-            ? "0 0 0 4px rgba(255,194,51,0.22), 0 18px 40px -12px rgba(40,40,60,0.22)"
-            : "0 1px 0 rgba(255,255,255,0.85) inset, 0 8px 24px -10px rgba(40,40,60,0.18)",
+          border,
+          boxShadow,
         }}
       >
         {isKsb && (

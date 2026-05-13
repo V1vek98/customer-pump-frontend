@@ -57,11 +57,21 @@ export type LayoutEdge = {
   kind: "series" | "parallel";
 };
 
+export type SubsectionColor = "blue" | "green" | "violet" | "rose" | "teal" | "amber";
+
+export type Subsection = {
+  id: string;
+  name: string;
+  color: SubsectionColor;
+  pumpIds: string[];
+};
+
 export type InstallationLayout = {
   id: string;
   name: string;
   nodes: LayoutNode[];
   edges: LayoutEdge[];
+  subsections?: Subsection[];
   updatedAt: string;
 };
 

@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
-import type { InstallationLayout, LayoutEdge, LayoutNode } from "@/types";
+import type { InstallationLayout, LayoutEdge, LayoutNode, SubsectionColor } from "@/types";
 import { SEED_LAYOUT } from "@/lib/mock/seed";
 
 type CanvasState = {
@@ -27,6 +27,13 @@ type CanvasState = {
   addEdge: (e: Omit<LayoutEdge, "id"> & { id?: string }) => void;
   updateEdge: (id: string, patch: Partial<LayoutEdge>) => void;
   removeEdge: (id: string) => void;
+
+  createSubsection: (pumpIds: string[], name: string, color: SubsectionColor) => string;
+  renameSubsection: (id: string, name: string) => void;
+  recolorSubsection: (id: string, color: SubsectionColor) => void;
+  deleteSubsection: (id: string) => void;
+  addPumpsToSubsection: (id: string, pumpIds: string[]) => void;
+  removePumpFromSubsection: (subsectionId: string, pumpId: string) => void;
 
   resetActiveLayout: () => void;
   touch: () => void;
@@ -67,6 +74,7 @@ export const useCanvasStore = create<CanvasState>()(
           name: name ?? "Untitled layout",
           nodes: [],
           edges: [],
+          subsections: [],
           updatedAt: new Date().toISOString(),
         };
         set((s) => ({ layouts: [...s.layouts, layout], activeLayoutId: id }));
@@ -82,6 +90,7 @@ export const useCanvasStore = create<CanvasState>()(
               name: "Untitled layout",
               nodes: [],
               edges: [],
+              subsections: [],
               updatedAt: new Date().toISOString(),
             };
             return { layouts: [fresh], activeLayoutId: fresh.id };
@@ -127,6 +136,9 @@ export const useCanvasStore = create<CanvasState>()(
             ...l,
             nodes: l.nodes.filter((n) => n.id !== id),
             edges: l.edges.filter((e) => e.source !== id && e.target !== id),
+            subsections: (l.subsections ?? [])
+              .map((sub) => ({ ...sub, pumpIds: sub.pumpIds.filter((p) => p !== id) }))
+              .filter((sub) => sub.pumpIds.length > 0),
             updatedAt: new Date().toISOString(),
           })),
         })),
@@ -167,12 +179,92 @@ export const useCanvasStore = create<CanvasState>()(
           })),
         })),
 
+      createSubsection: (pumpIds, name, color) => {
+        const id = `sub-${nanoid(6)}`;
+        set((s) => ({
+          layouts: patchActive(s.layouts, s.activeLayoutId, (l) => {
+            const existing = l.subsections ?? [];
+            const stripped = existing
+              .map((sub) => ({ ...sub, pumpIds: sub.pumpIds.filter((p) => !pumpIds.includes(p)) }))
+              .filter((sub) => sub.pumpIds.length > 0);
+            return {
+              ...l,
+              subsections: [...stripped, { id, name, color, pumpIds: [...pumpIds] }],
+              updatedAt: new Date().toISOString(),
+            };
+          }),
+        }));
+        return id;
+      },
+
+      renameSubsection: (id, name) =>
+        set((s) => ({
+          layouts: patchActive(s.layouts, s.activeLayoutId, (l) => ({
+            ...l,
+            subsections: (l.subsections ?? []).map((sub) => (sub.id === id ? { ...sub, name } : sub)),
+            updatedAt: new Date().toISOString(),
+          })),
+        })),
+
+      recolorSubsection: (id, color) =>
+        set((s) => ({
+          layouts: patchActive(s.layouts, s.activeLayoutId, (l) => ({
+            ...l,
+            subsections: (l.subsections ?? []).map((sub) => (sub.id === id ? { ...sub, color } : sub)),
+            updatedAt: new Date().toISOString(),
+          })),
+        })),
+
+      deleteSubsection: (id) =>
+        set((s) => ({
+          layouts: patchActive(s.layouts, s.activeLayoutId, (l) => ({
+            ...l,
+            subsections: (l.subsections ?? []).filter((sub) => sub.id !== id),
+            updatedAt: new Date().toISOString(),
+          })),
+        })),
+
+      addPumpsToSubsection: (id, pumpIds) =>
+        set((s) => ({
+          layouts: patchActive(s.layouts, s.activeLayoutId, (l) => {
+            const existing = l.subsections ?? [];
+            const stripped = existing
+              .map((sub) =>
+                sub.id === id ? sub : { ...sub, pumpIds: sub.pumpIds.filter((p) => !pumpIds.includes(p)) }
+              )
+              .filter((sub) => sub.id === id || sub.pumpIds.length > 0);
+            return {
+              ...l,
+              subsections: stripped.map((sub) =>
+                sub.id === id
+                  ? { ...sub, pumpIds: Array.from(new Set([...sub.pumpIds, ...pumpIds])) }
+                  : sub
+              ),
+              updatedAt: new Date().toISOString(),
+            };
+          }),
+        })),
+
+      removePumpFromSubsection: (subsectionId, pumpId) =>
+        set((s) => ({
+          layouts: patchActive(s.layouts, s.activeLayoutId, (l) => ({
+            ...l,
+            subsections: (l.subsections ?? [])
+              .map((sub) =>
+                sub.id === subsectionId ? { ...sub, pumpIds: sub.pumpIds.filter((p) => p !== pumpId) } : sub
+              )
+              .filter((sub) => sub.pumpIds.length > 0),
+            updatedAt: new Date().toISOString(),
+          })),
+        })),
+
       resetActiveLayout: () =>
         set((s) => ({
           layouts: patchActive(s.layouts, s.activeLayoutId, (l) => ({
             ...l,
             nodes: [],
             edges: [],
+            subsections: [],
             updatedAt: new Date().toISOString(),
           })),
         })),
@@ -187,18 +279,20 @@ export const useCanvasStore = create<CanvasState>()(
     }),
     {
       name: "giw-canvas-v1",
-      version: 1,
+      version: 2,
       migrate: (persisted, fromVersion) => {
-        if (fromVersion < 1 && persisted && typeof persisted === "object") {
-          const state = persisted as { layouts?: InstallationLayout[]; activeLayoutId?: string };
-          if (Array.isArray(state.layouts)) {
-            const layouts = state.layouts.map((l) =>
-              l.id === "layout-001" && l.name === "Mill Circuit · Pit B" ? SEED_LAYOUT : l
-            );
-            return { ...state, layouts };
-          }
+        if (!persisted || typeof persisted !== "object") return persisted as never;
+        const state = persisted as { layouts?: InstallationLayout[]; activeLayoutId?: string };
+        let layouts = state.layouts;
+        if (fromVersion < 1 && Array.isArray(layouts)) {
+          layouts = layouts.map((l) =>
+            l.id === "layout-001" && l.name === "Mill Circuit · Pit B" ? SEED_LAYOUT : l
+          );
         }
-        return persisted as never;
+        if (fromVersion < 2 && Array.isArray(layouts)) {
+          layouts = layouts.map((l) => ({ ...l, subsections: l.subsections ?? [] }));
+        }
+        return { ...state, layouts } as never;
       },
       skipHydration: true,
       onRehydrateStorage: () => (state) => state?.setHydrated(),
