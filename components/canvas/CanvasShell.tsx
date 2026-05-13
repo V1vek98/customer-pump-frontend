@@ -38,6 +38,9 @@ import { toast } from "sonner";
 const nodeTypes: NodeTypes = { pump: PumpNode, subsection: SubsectionNode };
 const edgeTypes: EdgeTypes = { flow: FlowEdge };
 
+const MULTI_SELECT_KEYS = ["Shift", "Control", "Meta"];
+const PAN_BUTTONS = [1, 2];
+
 function Inner() {
   const active = useCanvasStore((s) => s.layouts.find((l) => l.id === s.activeLayoutId) ?? s.layouts[0]);
   const addNode = useCanvasStore((s) => s.addNode);
@@ -158,6 +161,13 @@ function Inner() {
     [removeEdge]
   );
 
+  const onSelectionChange = useCallback(
+    ({ nodes: selected }: { nodes: Node[] }) => {
+      setSelectedNodeIds(selected.filter((n) => n.type === "pump").map((n) => n.id));
+    },
+    []
+  );
+
   const onConnect = useCallback(
     (c: Connection) => {
       if (!c.source || !c.target || c.source === c.target) return;
@@ -234,12 +244,10 @@ function Inner() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
-            onSelectionChange={(s) =>
-              setSelectedNodeIds(s.nodes.filter((n) => n.type === "pump").map((n) => n.id))
-            }
-            multiSelectionKeyCode={["Shift", "Control", "Meta"]}
+            onSelectionChange={onSelectionChange}
+            multiSelectionKeyCode={MULTI_SELECT_KEYS}
             selectionOnDrag
-            panOnDrag={[1, 2]}
+            panOnDrag={PAN_BUTTONS}
             selectionKeyCode={null}
             snapToGrid={snap}
             snapGrid={[16, 16]}
