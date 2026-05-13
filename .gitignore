@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local dev screenshots & MCP cache (root-only)
+/*.png
+.playwright-mcp/
